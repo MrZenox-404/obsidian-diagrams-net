@@ -3,8 +3,7 @@ import useDiagramsNet from './useDiagramsNet';
 
 
 export const DiagramsApp = (props: any) => {
-
-
+    // TODO: Typsafty for the props. Move xmlPath, DiagramExists, vault (also others like svgPath) to constants since they are used in multiple places.
     const {
         xmlPath,
         diagramExists,
@@ -21,7 +20,6 @@ export const DiagramsApp = (props: any) => {
         () => "",
         () => xmlData)
 
-
     const loadXmlData = async () => {
         const xmlFile = vault.getAbstractFileByPath(xmlPath)
         const data = await vault.cachedRead(xmlFile)
@@ -29,7 +27,7 @@ export const DiagramsApp = (props: any) => {
     }
 
     React.useEffect(() => {
-        if (diagramExists) {
+        if (diagramExists ) {
             if (!xmlData) {
                 loadXmlData()
             }

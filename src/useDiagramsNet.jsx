@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom'
-const bgColor="white"
+const bgColor = "white"
 /**
  * - Based on: https://github.com/jgraph/drawio-integration
  * - https://desk.draw.io/support/solutions/articles/16000042544
@@ -8,6 +8,8 @@ const bgColor="white"
  * - DiagramEditor.js is outright clone, with modifications after initial commit:
  * - The save function needs modification.
  */
+
+// ToDo: refactor the component to tsx for for typsafty modalifty of the constans/Props
 
 function useDiagramsNet(onSaveCallback, onStopEditing, getName, getData) {
 

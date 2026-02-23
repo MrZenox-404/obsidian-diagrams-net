@@ -1,5 +1,5 @@
 > **Warning**
-> I'm sad to say I can't find the time to maintain this plug-in. As such, issues will not be read. I may merge pull requests from time to time. If you think you can maintain this plugin please contact me.
+> I will try to maintain this plugin, but I can't promise anything bc I'm a junior developer.
 
 # Obsidian Diagrams.Net
 
