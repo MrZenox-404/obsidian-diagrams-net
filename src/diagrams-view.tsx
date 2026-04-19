@@ -1,16 +1,17 @@
-import { ItemView, WorkspaceLeaf, Workspace, View, Vault, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Workspace, View, Vault, TFile, MarkdownView } from 'obsidian';
 import { DIAGRAM_VIEW_TYPE } from './constants';
 import { DiagramsApp } from './DiagramsApp';
-import * as React from "react";
-import * as ReactDOM from "react-dom";
+import * as React from 'react';
+import * as ReactDOM from 'react-dom';
+import type { FileInfo, SaveAndExitPayload } from './types';
 
 export default class DiagramsView extends ItemView {
-    filePath: string;
-    fileName: string;
+    filePath: string | undefined;
+    fileName: string | undefined;
     svgPath: string;
     xmlPath: string;
     diagramExists: boolean;
-    hostView: View;
+    hostView: View | null;
     vault: Vault;
     workspace: Workspace;
     displayText: string;
@@ -23,8 +24,7 @@ export default class DiagramsView extends ItemView {
         return DIAGRAM_VIEW_TYPE;
     }
 
-    constructor(leaf: WorkspaceLeaf, hostView: View,
-        initialFileInfo: { path: string, basename: string, svgPath: string, xmlPath: string, diagramExists: boolean }) {
+    constructor(leaf: WorkspaceLeaf, hostView: View | null, initialFileInfo: FileInfo) {
         super(leaf);
         this.filePath = initialFileInfo.path;
         this.fileName = initialFileInfo.basename;
@@ -33,64 +33,50 @@ export default class DiagramsView extends ItemView {
         this.diagramExists = initialFileInfo.diagramExists;
         this.vault = this.app.vault;
         this.workspace = this.app.workspace;
-        this.hostView = hostView
+        this.hostView = hostView;
     }
 
-
-
-
     async onOpen() {
-
-        const handleExit = async () => {
-            close()
-        }
-
-        const handleSaveAndExit = async (msg: any) => {
-            if (this.diagramExists) {
-                saveData(msg)
-                refreshMarkdownViews()
-                close()
-            }
-            else {
-                saveData(msg)
-                insertDiagram()
-                close()
-            }
-        }
-
         const close = () => {
             this.workspace.detachLeavesOfType(DIAGRAM_VIEW_TYPE);
-        }
+        };
 
-        const saveData = (msg: any) => {
-            const svgData = msg.svgMsg.data
-            const svgBuffer = Buffer.from(svgData.replace('data:image/svg+xml;base64,', ''), 'base64')
+        const handleExit = async () => {
+            close();
+        };
+
+        const saveData = (msg: SaveAndExitPayload) => {
+            const svgData = msg.svgMsg.data;
+            const svgBuffer = Buffer.from(svgData.replace('data:image/svg+xml;base64,', ''), 'base64');
             if (this.diagramExists) {
-                const svgFile = this.vault.getAbstractFileByPath(this.svgPath)
-                const xmlFile = this.vault.getAbstractFileByPath(this.xmlPath)
+                const svgFile = this.vault.getAbstractFileByPath(this.svgPath);
+                const xmlFile = this.vault.getAbstractFileByPath(this.xmlPath);
                 if (!(svgFile instanceof TFile && xmlFile instanceof TFile)) {
-                    return
+                    return;
                 }
-                this.vault.modifyBinary(svgFile, svgBuffer)
-                this.vault.modify(xmlFile, msg.svgMsg.xml)
+                this.vault.modifyBinary(svgFile, svgBuffer);
+                this.vault.modify(xmlFile, msg.svgMsg.xml);
+            } else {
+                this.vault.createBinary(this.svgPath, svgBuffer);
+                this.vault.create(this.xmlPath, msg.svgMsg.xml);
             }
-            else {
-                this.vault.createBinary(this.svgPath, svgBuffer)
-                this.vault.create(this.xmlPath, msg.svgMsg.xml)
-            }
-        }
-
-        const refreshMarkdownViews = async () => {
-            // Haven't found a way to refresh the hostView.
-        }
+        };
 
         const insertDiagram = () => {
-            // @ts-ignore: Type not documented.
+            if (!(this.hostView instanceof MarkdownView)) {
+                return;
+            }
             const cursor = this.hostView.editor.getCursor();
-            // @ts-ignore: Type not documented.
             this.hostView.editor.replaceRange(`![[${this.svgPath}]]`, cursor);
+        };
 
-        }
+        const handleSaveAndExit = async (msg: SaveAndExitPayload) => {
+            saveData(msg);
+            if (!this.diagramExists) {
+                insertDiagram();
+            }
+            close();
+        };
 
         const container = this.containerEl.children[1];
 
@@ -102,12 +88,11 @@ export default class DiagramsView extends ItemView {
                 handleExit={handleExit}
                 handleSaveAndExit={handleSaveAndExit}
             />,
-            container
+            container,
         );
     }
 
     async onClose() {
         ReactDOM.unmountComponentAtNode(this.containerEl.children[1]);
     }
-
 }

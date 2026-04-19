@@ -1,185 +1,186 @@
-import { addIcon, Notice, Plugin, TFile, Vault, Workspace, WorkspaceLeaf, MenuItem, MarkdownView, TAbstractFile, Menu, Editor } from 'obsidian';
-import { DIAGRAM_VIEW_TYPE, ICON } from './constants';
+import {
+    addIcon,
+    Notice,
+    Plugin,
+    TFile,
+    Vault,
+    Workspace,
+    WorkspaceLeaf,
+    MenuItem,
+    MarkdownView,
+    TAbstractFile,
+    Menu,
+    Editor,
+} from 'obsidian';
+import {
+    DIAGRAM_VIEW_TYPE,
+    ICON,
+    SVG_EXTENSION,
+    XML_EXTENSION,
+} from './constants';
 import DiagramsView from './diagrams-view';
-
+import type { FileInfo } from './types';
 
 export default class DiagramsNet extends Plugin {
+    vault: Vault;
+    workspace: Workspace;
+    diagramsView: DiagramsView;
 
-	vault: Vault;
-	workspace: Workspace;
-	diagramsView: DiagramsView;
+    async onload() {
+        this.vault = this.app.vault;
+        this.workspace = this.app.workspace;
 
-	async onload() {
+        addIcon('diagram', ICON);
 
-		this.vault = this.app.vault;
-		this.workspace = this.app.workspace;
+        this.registerView(
+            DIAGRAM_VIEW_TYPE,
+            (leaf: WorkspaceLeaf) => (
+                this.diagramsView = new DiagramsView(leaf, null, {
+                    path: this.activeLeafPath(this.workspace),
+                    basename: this.activeLeafName(this.workspace),
+                    svgPath: '',
+                    xmlPath: '',
+                    diagramExists: false,
+                })
+            ),
+        );
 
-		addIcon("diagram", ICON);
+        this.addCommand({
+            id: 'app:diagrams-net-new-diagram',
+            name: 'New diagram',
+            checkCallback: (checking: boolean) => {
+                const leaf = this.app.workspace.activeLeaf;
+                if (leaf) {
+                    if (!checking) {
+                        this.attemptNewDiagram();
+                    }
+                    return true;
+                }
+                return false;
+            },
+            hotkeys: [],
+        });
 
-		this.registerView(
-			DIAGRAM_VIEW_TYPE,
-			(leaf: WorkspaceLeaf) => (
-				this.diagramsView = new DiagramsView(
-					leaf, null, {
-					path: this.activeLeafPath(this.workspace),
-					basename: this.activeLeafName(this.workspace),
-					svgPath: '',
-					xmlPath: '',
-					diagramExists: false,
-				})
-			)
-		);
+        this.registerEvent(
+            this.app.workspace.on('file-menu', this.handleFileMenu, this),
+        );
 
-		this.addCommand({
-			id: 'app:diagrams-net-new-diagram',
-			name: 'New diagram',
-			checkCallback: (checking: boolean) => {
-				const leaf = this.app.workspace.activeLeaf;
-				if (leaf) {
-					if (!checking) {
-						this.attemptNewDiagram()
-					}
-					return true;
-				}
-				return false;
-			},
-			hotkeys: []
-		});
+        this.registerEvent(
+            this.app.workspace.on('editor-menu', this.handleEditorMenu, this),
+        );
 
+        this.registerEvent(this.app.vault.on('rename', (file, oldname) => this.handleRenameFile(file, oldname)));
+        this.registerEvent(this.app.vault.on('delete', (file) => this.handleDeleteFile(file)));
+    }
 
-		// this.addRibbonIcon("diagram", "Insert new diagram", () => this.attemptNewDiagram() );
+    isFileValidDiagram(file: TAbstractFile): boolean {
+        if (!(file instanceof TFile) || file.extension !== SVG_EXTENSION) {
+            return false;
+        }
+        const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(file.path));
+        return xmlFile instanceof TFile && xmlFile.extension === XML_EXTENSION;
+    }
 
-		this.registerEvent(
-			this.app.workspace.on("file-menu", this.handleFileMenu, this)
-		);
+    getXmlPath(path: string): string {
+        return `${path}.${XML_EXTENSION}`;
+    }
 
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", this.handleEditorMenu, this)
-		);
+    activeLeafPath(workspace: Workspace): string | undefined {
+        return workspace.activeLeaf?.view.getState().file;
+    }
 
+    activeLeafName(workspace: Workspace): string | undefined {
+        return workspace.activeLeaf?.getDisplayText();
+    }
 
-		this.registerEvent(this.app.vault.on('rename', (file, oldname) => this.handleRenameFile(file, oldname)));
-		this.registerEvent(this.app.vault.on('delete', (file) => this.handleDeleteFile(file)));
+    async availablePath(): Promise<{ svgPath: string; xmlPath: string }> {
+        // @ts-ignore: Type not documented.
+        const base = await this.vault.getAvailablePathForAttachments('Diagram', SVG_EXTENSION);
+        return {
+            svgPath: base,
+            xmlPath: this.getXmlPath(base),
+        };
+    }
 
-	}
+    async attemptNewDiagram() {
+        const { svgPath, xmlPath } = await this.availablePath();
+        const fileInfo: FileInfo = {
+            path: this.activeLeafPath(this.workspace),
+            basename: this.activeLeafName(this.workspace),
+            diagramExists: false,
+            svgPath,
+            xmlPath,
+        };
+        this.initView(fileInfo);
+    }
 
-	isFileValidDiagram(file: TAbstractFile) {
-		let itIs = false
-		if (file instanceof TFile && file.extension === 'svg') {
-			const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(file.path));
-			if (xmlFile && xmlFile instanceof TFile && xmlFile.extension === 'xml') {
-				itIs = true
-			}
-		}
-		return itIs
-	}
+    attemptEditDiagram(svgFile: TFile) {
+        if (!this.isFileValidDiagram(svgFile)) {
+            new Notice('Diagram is not valid. (Missing .xml data)');
+            return;
+        }
+        const fileInfo: FileInfo = {
+            path: this.activeLeafPath(this.workspace),
+            basename: this.activeLeafName(this.workspace),
+            svgPath: svgFile.path,
+            xmlPath: this.getXmlPath(svgFile.path),
+            diagramExists: true,
+        };
+        this.initView(fileInfo);
+    }
 
-	getXmlPath(path: string) {
-		return (path + '.xml')
-	}
+    async initView(fileInfo: FileInfo) {
+        if (this.app.workspace.getLeavesOfType(DIAGRAM_VIEW_TYPE).length > 0) {
+            return;
+        }
+        const hostView = this.workspace.getActiveViewOfType(MarkdownView);
+        const leaf = this.app.workspace.getLeaf(true);
+        const diagramView = new DiagramsView(leaf, hostView, fileInfo);
+        leaf.open(diagramView);
+    }
 
-	activeLeafPath(workspace: Workspace) {
-		return workspace.activeLeaf?.view.getState().file;
-	}
+    handleDeleteFile(file: TAbstractFile) {
+        if (this.isFileValidDiagram(file)) {
+            const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(file.path));
+            if (xmlFile) {
+                this.vault.delete(xmlFile);
+            }
+        }
+    }
 
-	activeLeafName(workspace: Workspace) {
-		return workspace.activeLeaf?.getDisplayText();
-	}
+    handleRenameFile(file: TAbstractFile, oldname: string) {
+        if (!(file instanceof TFile) || file.extension !== SVG_EXTENSION) {
+            return;
+        }
+        const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(oldname));
+        if (xmlFile instanceof TFile && xmlFile.extension === XML_EXTENSION) {
+            this.vault.rename(xmlFile, this.getXmlPath(file.path));
+        }
+    }
 
-	async availablePath() {
-		// @ts-ignore: Type not documented.
-		const base = await this.vault.getAvailablePathForAttachments('Diagram', 'svg')
-		return {
-			svgPath: base,
-			xmlPath: this.getXmlPath(base)
-		}
-	}
+    handleFileMenu(menu: Menu, file: TAbstractFile) {
+        if (file instanceof TFile && file.extension === SVG_EXTENSION) {
+            menu.addItem((item) => {
+                item
+                    .setTitle('Edit diagram')
+                    .setIcon('diagram')
+                    .onClick(async () => {
+                        this.attemptEditDiagram(file);
+                    });
+            });
+        }
+    }
 
-	async attemptNewDiagram() {
-		const { svgPath, xmlPath } = await this.availablePath()
-		const fileInfo = {
-			path: this.activeLeafPath(this.workspace),
-			basename: this.activeLeafName(this.workspace),
-			diagramExists: false,
-			svgPath,
-			xmlPath
-		};
-		this.initView(fileInfo);
-	}
+    handleEditorMenu(menu: Menu, _editor: Editor, _view: MarkdownView) {
+        menu.addItem((item: MenuItem) => {
+            item
+                .setTitle('Insert new diagram')
+                .setIcon('diagram')
+                .onClick(async () => {
+                    this.attemptNewDiagram();
+                });
+        });
+    }
 
-
-	attemptEditDiagram(svgFile: TFile) {
-		if (!this.isFileValidDiagram(svgFile)) {
-			new Notice('Diagram is not valid. (Missing .xml data)');
-		}
-		else {
-			const fileInfo = {
-				path: this.activeLeafPath(this.workspace),
-				basename: this.activeLeafName(this.workspace),
-				svgPath: svgFile.path,
-				xmlPath: this.getXmlPath(svgFile.path),
-				diagramExists: true,
-			};
-			this.initView(fileInfo);
-		}
-
-	}
-
-	async initView(fileInfo: any) {
-		if (this.app.workspace.getLeavesOfType(DIAGRAM_VIEW_TYPE).length > 0) {
-			return
-		}
-		const hostView = this.workspace.getActiveViewOfType(MarkdownView);
-
-		const leaf = this.app.workspace.getLeaf(true)
-
-		const diagramView = new DiagramsView(leaf, hostView, fileInfo)
-		leaf.open(diagramView)
-	}
-
-	handleDeleteFile(file: TAbstractFile) {
-		if (this.isFileValidDiagram(file)) {
-			const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(file.path));
-			this.vault.delete(xmlFile)
-		}
-	}
-
-	handleRenameFile(file: TAbstractFile, oldname: string) {
-		if (file instanceof TFile && file.extension === 'svg') {
-			const xmlFile = this.app.vault.getAbstractFileByPath(this.getXmlPath(oldname));
-			if (xmlFile && xmlFile instanceof TFile && xmlFile.extension === 'xml') {
-				this.vault.rename(xmlFile, this.getXmlPath(file.path))
-			}
-		}
-	}
-
-	handleFileMenu(menu: Menu, file: TAbstractFile) {
-		if (file instanceof TFile && file.extension === 'svg') {
-			menu.addItem((item) => {
-				item
-					.setTitle("Edit diagram")
-					.setIcon("diagram")
-					.onClick(async () => {
-						this.attemptEditDiagram(file);
-					});
-			});
-		}
-	}
-
-	handleEditorMenu(menu: Menu, editor: Editor, view: MarkdownView) {
-		menu.addItem((item: MenuItem) => {
-			item
-				.setTitle("Insert new diagram")
-				.setIcon("diagram")
-				.onClick(async () => {
-					this.attemptNewDiagram();
-				});
-		});
-	}
-
-	async onunload() {
-	}
-
+    async onunload() {}
 }
-
-
