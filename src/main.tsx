@@ -131,9 +131,7 @@ export default class DiagramsNet extends Plugin {
 		}
 		const hostView = this.workspace.getActiveViewOfType(MarkdownView);
 
-		const leaf = this.app.workspace.splitActiveLeaf('horizontal')
-		// TODO: Replace splitActiveLeaf with getLeaf, when official version => 0.15.
-		// const leaf = this.app.workspace.getLeaf(true, 'horizontal')
+		const leaf = this.app.workspace.getLeaf(true)
 
 		const diagramView = new DiagramsView(leaf, hostView, fileInfo)
 		leaf.open(diagramView)
